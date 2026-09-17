@@ -1,0 +1,541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Reddit Media Search</title>
+<style>
+  :root {
+    --bg: #000; --card: #1c1c1e; --card2: #2c2c2e; --text: #fff;
+    --muted: #8e8e93; --accent: #0a84ff; --danger: #ff453a;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", Roboto, sans-serif;
+    min-height: 100vh;
+  }
+  header {
+    position: sticky; top: 0; z-index: 20;
+    background: rgba(0,0,0,.85); backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px);
+    padding: calc(env(safe-area-inset-top) + 10px) 14px 10px;
+    border-bottom: 1px solid #2c2c2e;
+  }
+  .title-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .title-row h1 { font-size: 20px; font-weight: 700; flex: 1; }
+  .icon-btn {
+    background: var(--card2); border: none; color: var(--text);
+    width: 36px; height: 36px; border-radius: 50%; font-size: 16px;
+    display: flex; align-items: center; justify-content: center; cursor: pointer;
+  }
+  .search-box {
+    display: flex; align-items: center; gap: 8px;
+    background: var(--card); border-radius: 10px; padding: 9px 12px;
+  }
+  .search-box input {
+    flex: 1; background: none; border: none; outline: none;
+    color: var(--text); font-size: 16px;
+  }
+  .search-box input::placeholder { color: var(--muted); }
+  .search-box .clear { color: var(--muted); cursor: pointer; display: none; }
+
+  /* Filter chips */
+  .chips {
+    display: flex; gap: 8px; overflow-x: auto; padding: 10px 14px;
+    scrollbar-width: none; -webkit-overflow-scrolling: touch;
+  }
+  .chips::-webkit-scrollbar { display: none; }
+  .chip {
+    flex-shrink: 0; padding: 7px 14px; border-radius: 999px; border: none;
+    background: var(--card2); color: var(--text); font-size: 14px; font-weight: 500;
+    cursor: pointer; white-space: nowrap;
+  }
+  .chip.active { background: var(--accent); color: #fff; }
+
+  /* Grid */
+  #grid { display: grid; gap: 8px; padding: 4px 10px 100px; }
+  #grid.s1 { grid-template-columns: repeat(4, 1fr); }
+  #grid.s2 { grid-template-columns: repeat(3, 1fr); }
+  #grid.s3 { grid-template-columns: repeat(2, 1fr); }
+  #grid.s4 { grid-template-columns: 1fr; }
+  .cell {
+    position: relative; border-radius: 10px; overflow: hidden;
+    background: var(--card); cursor: pointer;
+  }
+  .s1 .cell { height: 90px; } .s2 .cell { height: 130px; }
+  .s3 .cell { height: 180px; } .s4 .cell { height: 320px; }
+  .cell img, .cell video { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .cell .ph {
+    width: 100%; height: 100%; display: flex; align-items: center; justify-content: center;
+    font-size: 28px; color: var(--muted); background: var(--card2);
+  }
+  .cell .badge {
+    position: absolute; left: 6px; bottom: 6px;
+    background: rgba(0,0,0,.65); color: #fff; font-size: 11px; font-weight: 700;
+    padding: 3px 8px; border-radius: 999px; display: flex; gap: 4px; align-items: center;
+  }
+  .s1 .cell .badge span.txt { display: none; }
+  .cell.nsfw-blur img, .cell.nsfw-blur video { filter: blur(25px); }
+  .cell .nsfw-cover {
+    position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  }
+  .cell .nsfw-cover button {
+    background: rgba(60,60,60,.8); backdrop-filter: blur(10px); border: none; color: #fff;
+    font-size: 12px; font-weight: 700; padding: 8px 12px; border-radius: 999px; cursor: pointer;
+  }
+
+  /* States */
+  .state { text-align: center; padding: 80px 24px; color: var(--muted); }
+  .state .big { font-size: 44px; margin-bottom: 12px; }
+  .state h2 { color: var(--text); font-size: 18px; margin-bottom: 6px; }
+  .spinner {
+    width: 28px; height: 28px; border: 3px solid var(--card2);
+    border-top-color: var(--accent); border-radius: 50%;
+    margin: 40px auto; animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Menus */
+  .menu-backdrop {
+    position: fixed; inset: 0; background: rgba(0,0,0,.5); z-index: 40; display: none;
+  }
+  .menu-backdrop.open { display: block; }
+  .sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 50;
+    background: var(--card); border-radius: 14px 14px 0 0;
+    padding: 16px 16px calc(env(safe-area-inset-bottom) + 16px);
+    transform: translateY(110%); transition: transform .25s ease;
+    max-height: 75vh; overflow-y: auto;
+  }
+  .sheet.open { transform: translateY(0); }
+  .sheet h3 { font-size: 13px; color: var(--muted); text-transform: uppercase; margin: 14px 4px 8px; letter-spacing: .5px; }
+  .sheet h3:first-child { margin-top: 0; }
+  .sheet .opt {
+    display: flex; align-items: center; width: 100%; text-align: left;
+    background: none; border: none; color: var(--text); font-size: 16px;
+    padding: 12px 8px; border-radius: 8px; cursor: pointer;
+  }
+  .sheet .opt:active { background: var(--card2); }
+  .sheet .opt .check { margin-left: auto; color: var(--accent); font-weight: 700; visibility: hidden; }
+  .sheet .opt.sel .check { visibility: visible; }
+  .toggle-row { display: flex; align-items: center; justify-content: space-between; padding: 12px 8px; font-size: 16px; }
+  .switch { position: relative; width: 51px; height: 31px; }
+  .switch input { opacity: 0; width: 100%; height: 100%; position: absolute; cursor: pointer; }
+  .switch .track {
+    position: absolute; inset: 0; background: var(--card2); border-radius: 999px; transition: .2s;
+  }
+  .switch .track::after {
+    content: ""; position: absolute; top: 2px; left: 2px; width: 27px; height: 27px;
+    background: #fff; border-radius: 50%; transition: .2s;
+  }
+  .switch input:checked + .track { background: #30d158; }
+  .switch input:checked + .track::after { transform: translateX(20px); }
+  .note { font-size: 13px; color: var(--muted); padding: 4px 8px 8px; line-height: 1.4; }
+  .sec-list { padding: 4px 8px; font-size: 14px; color: var(--muted); line-height: 1.9; }
+
+  /* Detail overlay */
+  #detail {
+    position: fixed; inset: 0; z-index: 60; background: var(--bg);
+    display: none; flex-direction: column; overflow-y: auto;
+  }
+  #detail.open { display: flex; }
+  #detail .dhead {
+    position: sticky; top: 0; display: flex; align-items: center; gap: 10px;
+    padding: calc(env(safe-area-inset-top) + 10px) 14px 10px;
+    background: rgba(0,0,0,.85); backdrop-filter: blur(20px); z-index: 2;
+  }
+  #detail .dhead h2 { flex: 1; font-size: 15px; font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  #detail .media-wrap { position: relative; }
+  #detail img.dmedia { width: 100%; display: block; }
+  #detail video.dmedia { width: 100%; max-height: 60vh; background: #000; }
+  #detail .dmedia.blurred { filter: blur(30px); }
+  #detail .audio-box { text-align: center; padding: 50px 20px; }
+  #detail .audio-box .big { font-size: 70px; }
+  #detail .meta { padding: 14px 16px 40px; }
+  #detail .meta h3 { font-size: 17px; margin-bottom: 8px; line-height: 1.35; }
+  #detail .meta .sub { color: var(--muted); font-size: 14px; margin-bottom: 12px; }
+  #detail .meta a { color: var(--accent); text-decoration: none; font-size: 14px; }
+  .btn-primary {
+    background: var(--accent); color: #fff; border: none; border-radius: 10px;
+    padding: 12px 24px; font-size: 16px; font-weight: 600; cursor: pointer;
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="title-row">
+    <h1>Reddit Media</h1>
+    <button class="icon-btn" id="sortBtn" title="Sort">⇅</button>
+    <button class="icon-btn" id="sizeBtn" title="View size">▦</button>
+    <button class="icon-btn" id="settingsBtn" title="Settings">⚙︎</button>
+  </div>
+  <div class="search-box">
+    <span style="color:var(--muted)">🔍</span>
+    <input id="searchInput" type="search" placeholder="Search images, videos, audio…" autocomplete="off">
+    <span class="clear" id="clearBtn">✕</span>
+  </div>
+</header>
+
+<div class="chips" id="chips"></div>
+<div id="grid" class="s2"></div>
+<div id="status"></div>
+
+<!-- Sort sheet -->
+<div class="menu-backdrop" id="sortBackdrop"></div>
+<div class="sheet" id="sortSheet">
+  <h3>Sort by</h3>
+  <div id="sortOpts"></div>
+  <div id="timeSection" style="display:none">
+    <h3>Time period</h3>
+    <div id="timeOpts"></div>
+  </div>
+</div>
+
+<!-- Size sheet -->
+<div class="menu-backdrop" id="sizeBackdrop"></div>
+<div class="sheet" id="sizeSheet">
+  <h3>Thumbnail size</h3>
+  <div id="sizeOpts"></div>
+</div>
+
+<!-- Settings sheet -->
+<div class="menu-backdrop" id="settingsBackdrop"></div>
+<div class="sheet" id="settingsSheet">
+  <h3>Content</h3>
+  <div class="toggle-row">
+    <span>Show NSFW results</span>
+    <label class="switch"><input type="checkbox" id="nsfwToggle"><span class="track"></span></label>
+  </div>
+  <p class="note">Off by default. When on, NSFW media is still blurred until you tap to reveal it.</p>
+  <h3>Privacy &amp; Security</h3>
+  <div class="sec-list">
+    🔒 HTTPS-only connections<br>
+    🚫 No tracking or analytics<br>
+    💾 Nothing stored on your device
+  </div>
+</div>
+
+<!-- Detail view -->
+<div id="detail">
+  <div class="dhead">
+    <button class="icon-btn" id="detailBack">‹</button>
+    <h2 id="detailTitle"></h2>
+  </div>
+  <div class="media-wrap" id="detailMedia"></div>
+  <div class="meta" id="detailMeta"></div>
+</div>
+
+<script>
+(function () {
+  "use strict";
+
+  // ---------- State ----------
+  const state = {
+    query: "",
+    items: [],          // unfiltered
+    after: null,
+    loading: false,
+    filter: "all",      // all | image | video | gif | audio
+    sort: "relevance",
+    time: "all",
+    size: parseInt(localStorage.getItem("thumbSize") || "2", 10), // 1..4
+    allowNSFW: false,
+  };
+
+  const FILTERS = [
+    ["all", "All media"], ["image", "Images"], ["video", "Videos"],
+    ["gif", "GIFs"], ["audio", "Audio"]
+  ];
+  const SORTS = [
+    ["relevance", "Relevance"], ["new", "Newest"], ["hot", "Hot"],
+    ["top", "Top"], ["comments", "Most commented"]
+  ];
+  const TIMES = [
+    ["hour", "Past hour"], ["day", "Past 24 hours"], ["week", "Past week"],
+    ["month", "Past month"], ["year", "Past year"], ["all", "All time"]
+  ];
+  const SIZES = [
+    [1, "Small"], [2, "Medium"], [3, "Large"], [4, "Extra large"]
+  ];
+  const TYPE_ICON = { image: "🖼", video: "▶️", gif: "✨", audio: "🔊" };
+  const TYPE_LABEL = { image: "Image", video: "Video", gif: "GIF", audio: "Audio" };
+
+  // ---------- Helpers ----------
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => s.replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const sanitize = (raw) => raw.replace(/[ -]/g, "").trim().slice(0, 200);
+
+  function mediaFromPost(p) {
+    const url = (p.url || "").replace(/&amp;/g, "&");
+    const lower = url.toLowerCase();
+    const thumb = (p.thumbnail || "").startsWith("https://") ? p.thumbnail : null;
+    const base = {
+      id: p.id, title: p.title, subreddit: p.subreddit, author: p.author,
+      nsfw: !!p.over_18, ups: p.ups,
+      permalink: "https://www.reddit.com" + p.permalink, thumb
+    };
+    if (p.is_video && p.secure_media && p.secure_media.reddit_video) {
+      const v = p.secure_media.reddit_video;
+      if (v.fallback_url) return Object.assign(base, { type: v.is_gif ? "gif" : "video", media: v.fallback_url.replace(/&amp;/g, "&") });
+    }
+    const mp4 = p.preview && p.preview.images && p.preview.images[0] &&
+      p.preview.images[0].variants && p.preview.images[0].variants.mp4;
+    if (mp4 && mp4.source && mp4.source.url) {
+      return Object.assign(base, { type: "gif", media: mp4.source.url.replace(/&amp;/g, "&") });
+    }
+    if (/\.(mp3|wav|m4a)$/.test(lower)) return Object.assign(base, { type: "audio", media: url });
+    if (/\.(jpg|jpeg|png|webp|gif)$/.test(lower)) return Object.assign(base, { type: "image", media: url });
+    const src = p.preview && p.preview.images && p.preview.images[0] && p.preview.images[0].source;
+    if (src && src.url) return Object.assign(base, { type: "image", media: src.url.replace(/&amp;/g, "&") });
+    return null;
+  }
+
+  // ---------- Reddit API ----------
+  async function search(after) {
+    const params = new URLSearchParams({
+      q: state.query, type: "link", sort: state.sort, t: state.time,
+      limit: "50", include_over_18: state.allowNSFW ? "on" : "off", raw_json: "1"
+    });
+    if (after) params.set("after", after);
+    const res = await fetch("https://www.reddit.com/search.json?" + params.toString(), {
+      headers: { "Accept": "application/json" }
+    });
+    if (res.status === 429) throw new Error("Reddit rate limit reached. Please wait a moment.");
+    if (!res.ok) throw new Error("Reddit returned an unexpected response (" + res.status + ").");
+    const json = await res.json();
+    return {
+      items: json.data.children.map(c => mediaFromPost(c.data)).filter(Boolean),
+      after: json.data.after
+    };
+  }
+
+  // ---------- Rendering ----------
+  function renderChips() {
+    $("chips").innerHTML = FILTERS.map(([k, label]) =>
+      `<button class="chip ${state.filter === k ? "active" : ""}" data-filter="${k}">${label}</button>`
+    ).join("");
+  }
+
+  function filtered() {
+    return state.filter === "all" ? state.items : state.items.filter(i => i.type === state.filter);
+  }
+
+  function renderGrid() {
+    const grid = $("grid");
+    grid.className = "s" + state.size;
+    const items = filtered();
+    if (!items.length) { grid.innerHTML = ""; return; }
+    grid.innerHTML = items.map((item, idx) => {
+      const blurred = item.nsfw ? " nsfw-blur" : "";
+      let inner;
+      if (item.type === "audio") {
+        inner = `<div class="ph">🔊</div>`;
+      } else if (item.thumb) {
+        inner = `<img loading="lazy" src="${esc(item.thumb)}" alt="" onerror="this.outerHTML='<div class=ph>${TYPE_ICON[item.type]}</div>'">`;
+      } else {
+        inner = `<div class="ph">${TYPE_ICON[item.type]}</div>`;
+      }
+      return `<div class="cell${blurred}" data-idx="${idx}">
+        ${inner}
+        ${item.nsfw ? `<div class="nsfw-cover"><button data-reveal="${idx}">🚫 NSFW — tap to reveal</button></div>` : ""}
+        <div class="badge">${TYPE_ICON[item.type]}<span class="txt">${TYPE_LABEL[item.type]}</span></div>
+      </div>`;
+    }).join("");
+  }
+
+  function renderStatus(kind, msg) {
+    const el = $("status");
+    if (kind === "loading") { el.innerHTML = `<div class="spinner"></div>`; return; }
+    if (kind === "empty-search") {
+      el.innerHTML = `<div class="state"><div class="big">🔍</div><h2>Search Reddit media</h2><p>Images, videos, GIFs and audio only.</p></div>`; return;
+    }
+    if (kind === "empty") {
+      el.innerHTML = `<div class="state"><div class="big">🖼</div><h2>No media found</h2><p>Try a different search term or filter.</p></div>`; return;
+    }
+    if (kind === "error") {
+      el.innerHTML = `<div class="state"><div class="big">⚠️</div><h2>Search failed</h2><p>${esc(msg)}</p></div>`; return;
+    }
+    el.innerHTML = "";
+  }
+
+  function refresh() {
+    renderGrid();
+    if (!state.query) { renderStatus("empty-search"); return; }
+    if (state.loading && !state.items.length) { renderStatus("loading"); return; }
+    if (!filtered().length) { renderStatus("empty"); return; }
+    renderStatus(state.loading ? "loading" : "ok");
+  }
+
+  // ---------- Search ----------
+  let debounceTimer = null;
+  async function runSearch() {
+    const q = sanitize(state.query);
+    if (!q) { state.items = []; state.after = null; refresh(); return; }
+    state.loading = true; state.after = null; refresh();
+    try {
+      const r = await search(null);
+      state.items = r.items; state.after = r.after;
+    } catch (e) {
+      state.items = [];
+      renderStatus("error", e.message);
+      state.loading = false;
+      return;
+    }
+    state.loading = false; refresh();
+  }
+
+  async function loadMore() {
+    if (state.loading || !state.after || !state.query) return;
+    state.loading = true; renderStatus("loading");
+    try {
+      const r = await search(state.after);
+      state.items = state.items.concat(r.items);
+      state.after = r.after;
+    } catch (e) { /* keep existing results */ }
+    state.loading = false; refresh();
+  }
+
+  // Infinite scroll
+  window.addEventListener("scroll", () => {
+    if (window.innerHeight + window.scrollY >= document.body.scrollHeight - 600) loadMore();
+  }, { passive: true });
+
+  // ---------- Sheets ----------
+  function openSheet(sheet, backdrop) { sheet.classList.add("open"); backdrop.classList.add("open"); }
+  function closeAll() {
+    document.querySelectorAll(".sheet").forEach(s => s.classList.remove("open"));
+    document.querySelectorAll(".menu-backdrop").forEach(b => b.classList.remove("open"));
+  }
+  document.querySelectorAll(".menu-backdrop").forEach(b => b.addEventListener("click", closeAll));
+
+  function renderSortSheet() {
+    $("sortOpts").innerHTML = SORTS.map(([k, label]) =>
+      `<button class="opt ${state.sort === k ? "sel" : ""}" data-sort="${k}">${label}<span class="check">✓</span></button>`
+    ).join("");
+    $("timeSection").style.display = state.sort === "top" ? "block" : "none";
+    $("timeOpts").innerHTML = TIMES.map(([k, label]) =>
+      `<button class="opt ${state.time === k ? "sel" : ""}" data-time="${k}">${label}<span class="check">✓</span></button>`
+    ).join("");
+  }
+
+  function renderSizeSheet() {
+    $("sizeOpts").innerHTML = SIZES.map(([n, label]) =>
+      `<button class="opt ${state.size === n ? "sel" : ""}" data-size="${n}">${label}<span class="check">✓</span></button>`
+    ).join("");
+  }
+
+  // ---------- Detail ----------
+  let currentPlayer = null;
+  function openDetail(item) {
+    $("detailTitle").textContent = item.title;
+    const media = $("detailMedia");
+    const meta = $("detailMeta");
+    const blurCls = item.nsfw ? " blurred" : "";
+    if (item.type === "image") {
+      media.innerHTML = `<img class="dmedia${blurCls}" src="${esc(item.media)}" alt="">` +
+        (item.nsfw ? `<div class="nsfw-cover" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center"><button class="btn-primary" id="detailReveal">🚫 NSFW — tap to reveal</button></div>` : "");
+    } else if (item.type === "video" || item.type === "gif") {
+      media.innerHTML = `<video class="dmedia${blurCls}" src="${esc(item.media)}" controls playsinline ${item.type === "gif" ? "loop muted autoplay" : ""}></video>` +
+        (item.nsfw ? `<div class="nsfw-cover" style="position:absolute;inset:0;display:flex;align-items:center;justify-content:center"><button class="btn-primary" id="detailReveal">🚫 NSFW — tap to reveal</button></div>` : "");
+    } else {
+      media.innerHTML = `<div class="audio-box"><div class="big">🔊</div><br><button class="btn-primary" id="audioBtn">Play / Pause</button><audio id="audioEl" src="${esc(item.media)}" preload="none"></audio></div>`;
+    }
+    meta.innerHTML = `<h3>${esc(item.title)}</h3>
+      <div class="sub">r/${esc(item.subreddit)} • u/${esc(item.author)} • ⬆ ${item.ups}</div>
+      <a href="${esc(item.permalink)}" target="_blank" rel="noopener noreferrer">View on Reddit ↗</a>`;
+    $("detail").classList.add("open");
+    document.body.style.overflow = "hidden";
+
+    const revealBtn = $("detailReveal");
+    if (revealBtn) revealBtn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      media.querySelector(".dmedia").classList.remove("blurred");
+      revealBtn.parentElement.remove();
+    });
+    const audioBtn = $("audioBtn");
+    if (audioBtn) {
+      const audio = $("audioEl");
+      currentPlayer = audio;
+      audioBtn.addEventListener("click", () => audio.paused ? audio.play() : audio.pause());
+    }
+    const vid = media.querySelector("video");
+    if (vid) currentPlayer = vid;
+  }
+
+  function closeDetail() {
+    if (currentPlayer) { currentPlayer.pause && currentPlayer.pause(); currentPlayer = null; }
+    $("detail").classList.remove("open");
+    document.body.style.overflow = "";
+  }
+
+  // ---------- Events ----------
+  $("searchInput").addEventListener("input", (e) => {
+    state.query = e.target.value;
+    $("clearBtn").style.display = e.target.value ? "block" : "none";
+    clearTimeout(debounceTimer);
+    debounceTimer = setTimeout(runSearch, 500);
+  });
+  $("clearBtn").addEventListener("click", () => {
+    $("searchInput").value = ""; state.query = "";
+    $("clearBtn").style.display = "none";
+    state.items = []; refresh();
+  });
+
+  $("chips").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-filter]");
+    if (!btn) return;
+    state.filter = btn.dataset.filter;
+    renderChips(); refresh();
+  });
+
+  $("grid").addEventListener("click", (e) => {
+    const reveal = e.target.closest("[data-reveal]");
+    if (reveal) {
+      e.stopPropagation();
+      const cell = reveal.closest(".cell");
+      cell.classList.remove("nsfw-blur");
+      reveal.parentElement.remove();
+      return;
+    }
+    const cell = e.target.closest(".cell");
+    if (!cell) return;
+    const item = filtered()[parseInt(cell.dataset.idx, 10)];
+    if (item) openDetail(item);
+  });
+
+  $("sortBtn").addEventListener("click", () => { renderSortSheet(); openSheet($("sortSheet"), $("sortBackdrop")); });
+  $("sizeBtn").addEventListener("click", () => { renderSizeSheet(); openSheet($("sizeSheet"), $("sizeBackdrop")); });
+  $("settingsBtn").addEventListener("click", () => { openSheet($("settingsSheet"), $("settingsBackdrop")); });
+
+  $("sortOpts").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-sort]"); if (!btn) return;
+    state.sort = btn.dataset.sort; renderSortSheet(); runSearch();
+  });
+  $("timeOpts").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-time]"); if (!btn) return;
+    state.time = btn.dataset.time; renderSortSheet(); runSearch();
+  });
+  $("sizeOpts").addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-size]"); if (!btn) return;
+    state.size = parseInt(btn.dataset.size, 10);
+    localStorage.setItem("thumbSize", String(state.size));
+    renderSizeSheet(); refresh(); closeAll();
+  });
+
+  $("nsfwToggle").addEventListener("change", (e) => {
+    state.allowNSFW = e.target.checked;
+    if (state.query) runSearch();
+  });
+
+  $("detailBack").addEventListener("click", closeDetail);
+
+  // ---------- Init ----------
+  renderChips();
+  refresh();
+})();
+</script>
+</body>
+</html>
